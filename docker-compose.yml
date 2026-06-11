@@ -27,7 +27,7 @@ services:
       - traefik.http.services.mcp-article-generator.loadbalancer.server.port=3000
 
     volumes:
-      - ./logs:/logs
+      - ./logs:/app/logs
 
 networks:
   web:
