@@ -12,6 +12,7 @@ RUN python -c "from mcp.server.fastmcp import FastMCP; print('FastMCP import OK'
 COPY config ./config
 COPY models ./models
 COPY services ./services
+COPY scripts ./scripts
 COPY tools ./tools
 COPY server.py ./
 

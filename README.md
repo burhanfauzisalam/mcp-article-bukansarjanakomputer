@@ -74,6 +74,31 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
+## Cron Generate Harian
+
+Cron tidak perlu memanggil protokol MCP. Gunakan script CLI yang memakai logic yang sama dengan tool `generate_next_article`, yaitu generate artikel lalu langsung publish.
+
+Tes manual di server Docker:
+
+```bash
+cd /path/to/article-generator
+docker compose exec -T mcp-article-generator python scripts/generate_next_article.py
+```
+
+Crontab host Linux untuk menjalankan setiap hari jam 06:00:
+
+```cron
+0 6 * * * cd /path/to/article-generator && docker compose exec -T mcp-article-generator python scripts/generate_next_article.py >> logs/cron.log 2>&1
+```
+
+Jika menjalankan tanpa Docker:
+
+```cron
+0 6 * * * cd /path/to/article-generator && /path/to/venv/bin/python scripts/generate_next_article.py >> logs/cron.log 2>&1
+```
+
+Pastikan timezone server sudah sesuai. Jika memakai Docker Compose, container `mcp-article-generator` harus sedang berjalan saat cron dieksekusi.
+
 ## Contoh Konfigurasi MCP Client
 
 ### Lokal
