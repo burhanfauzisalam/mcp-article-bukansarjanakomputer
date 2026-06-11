@@ -1,6 +1,6 @@
 # Article Generator MCP Server
 
-MCP server untuk membuat dan menerbitkan artikel blog Bukansarjanakomputer.
+MCP server untuk mencari referensi web terbaru, membuat, dan menerbitkan artikel blog Bukansarjanakomputer.
 
 Endpoint publik yang diharapkan di Traefik:
 
@@ -16,10 +16,10 @@ Di backend container, endpoint MCP dijalankan pada `/`, lalu Traefik melakukan `
    Mengambil artikel terakhir dari API blog.
 
 2. `generate_next_article`
-   Membuat artikel berikutnya berdasarkan kategori artikel terakhir, lalu langsung menerbitkannya ke API blog.
+   Mengambil kategori artikel terakhir, mencari referensi web terbaru untuk kategori berikutnya, membuat artikel, lalu langsung menerbitkannya ke API blog.
 
 3. `generate_article_by_topic`
-   Membuat artikel berdasarkan topik yang diminta, otomatis memilih kategori dari `Web Development`, `SEO`, `IoT`, `DevOps`, atau `Automation`, lalu langsung menerbitkannya ke API blog.
+   Membuat artikel berdasarkan topik yang diminta, otomatis memilih kategori dari `Web Development`, `SEO`, `IoT`, `DevOps`, atau `Automation`, mencari referensi web terbaru untuk topik tersebut, lalu langsung menerbitkannya ke API blog.
 
 4. `publish_next_article`
    Tool kompatibilitas lama untuk membuat artikel berikutnya lalu menerbitkannya ke API blog.
@@ -36,12 +36,37 @@ Variabel penting:
 - `GEMINI_BASE_URL`: endpoint Gemini REST. Default contoh memakai `gemini-2.5-flash-lite`.
 - `GEMINI_MAX_ATTEMPTS_PER_KEY`: jumlah retry per API key untuk status sementara seperti `429`.
 - `GEMINI_RETRY_DELAY_SECONDS`: jeda awal retry Gemini dalam detik.
+- `WEB_RESEARCH_ENABLED`: aktif/nonaktifkan pencarian referensi web sebelum generate artikel.
+- `WEB_RESEARCH_REQUIRED`: jika `true`, proses generate gagal ketika pencarian referensi gagal. Jika `false`, generate tetap berjalan tanpa referensi.
+- `WEB_RESEARCH_PROVIDER`: provider search. Saat ini mendukung `tavily`.
+- `WEB_RESEARCH_MAX_RESULTS`: jumlah maksimal referensi web yang dikirim ke prompt.
+- `WEB_RESEARCH_TIME_RANGE`: rentang waktu referensi Tavily, misalnya `day`, `week`, `month`, atau `year`.
+- `WEB_RESEARCH_SEARCH_DEPTH`: kedalaman search Tavily, misalnya `basic`, `fast`, `advanced`, atau `ultra-fast`.
+- `WEB_RESEARCH_COUNTRY`: opsional, boost hasil dari negara tertentu sesuai daftar Tavily, misalnya `indonesia`. Kosongkan untuk hasil global.
+- `WEB_RESEARCH_EXCLUDE_DOMAINS`: daftar domain yang dikecualikan dari referensi, dipisahkan koma.
+- `TAVILY_API_KEY`: API key Tavily untuk produksi. Jika kosong, server mencoba mode keyless Tavily yang rate limited.
 - `PORT`: port internal container, default `3000`.
 - `MCP_ENDPOINT`: endpoint MCP internal container, default `/`.
 - `HEALTH_PATH`: endpoint health, default `/healthz`.
 - `MAIN_DOMAIN`: domain Traefik.
 
 Jika Gemini mengembalikan `429`, semua key yang terbaca sedang terkena rate limit atau quota habis. Tambahkan key yang masih memiliki quota, tunggu quota reset, atau ganti `GEMINI_BASE_URL` ke model yang tersedia untuk akun/API key tersebut.
+
+## Riset Web Sebelum Generate
+
+Sebelum artikel dibuat, tool generate akan mencari referensi web terbaru memakai Tavily. Referensi ini hanya dipakai sebagai konteks prompt Gemini dan dikembalikan di response MCP pada field `web_research`. Payload artikel yang dikirim ke API blog tetap berisi data artikel utama, sehingga endpoint blog tidak perlu menerima field sumber tambahan.
+
+Jika ingin mematikan riset web:
+
+```env
+WEB_RESEARCH_ENABLED=false
+```
+
+Jika ingin proses generate berhenti ketika riset web gagal:
+
+```env
+WEB_RESEARCH_REQUIRED=true
+```
 
 ## Menjalankan Lokal
 

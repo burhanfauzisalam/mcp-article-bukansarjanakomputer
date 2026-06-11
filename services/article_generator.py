@@ -141,15 +141,39 @@ def _generate_content_with_failover(prompt: str) -> str:
         f"{last_error}. If this is status_code=429, the keys are rate limited or quota exhausted."
     )
 
-def generate_article(category: str, topic: str | None = None):
+def _format_references_for_prompt(references: list[dict] | None) -> str:
+    if not references:
+        return "Tidak ada referensi web yang tersedia. Buat artikel berdasarkan pengetahuan umum yang relevan."
+
+    lines = [
+        "Gunakan referensi web terbaru berikut sebagai konteks fakta dan tren.",
+        "Jangan menyalin kalimat dari referensi. Tulis artikel baru dengan struktur dan gaya original.",
+    ]
+    for index, reference in enumerate(references, start=1):
+        lines.extend(
+            [
+                f"{index}. Judul: {reference.get('title') or '-'}",
+                f"   URL: {reference.get('url') or '-'}",
+                f"   Ringkasan: {reference.get('summary') or '-'}",
+            ]
+        )
+
+    return "\n".join(lines)
+
+
+def generate_article(category: str, topic: str | None = None, references: list[dict] | None = None):
     logger.info("Generating article with Gemini: category=%s topic=%s", category, topic)
     current_year = date.today().year
     topic_instruction = f"Topik utama: {topic}" if topic else "Topik utama: tentukan berdasarkan kategori."
+    reference_instruction = _format_references_for_prompt(references)
     prompt = f'''
 Buat artikel blog teknologi profesional.
 Kategori: {category}
 {topic_instruction}
 Tahun saat ini: {current_year}
+Referensi:
+{reference_instruction}
+
 Persyaratan:
 - Bahasa Indonesia
 - Minimal 700 kata
@@ -159,6 +183,9 @@ Persyaratan:
 - Jangan gunakan markdown
 - Jangan gunakan tahun lama pada judul atau isi artikel kecuali sedang membahas sejarah
 - Judul, excerpt, dan isi harus fokus pada topik utama
+- Utamakan fakta dari referensi terbaru jika tersedia
+- Jangan membuat klaim sumber palsu atau URL palsu
+- Jika menyebut data/fakta spesifik dari referensi, sebutkan nama sumbernya secara natural di isi artikel
 
 Output HARUS JSON valid:
 {{
