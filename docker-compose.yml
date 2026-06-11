@@ -1,0 +1,31 @@
+services:
+  mcp-article-generator:
+    build: .
+    container_name: mcp-article-generator
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: ${PORT:-3000}
+      MCP_HOST: 0.0.0.0
+      MCP_ENDPOINT: ${MCP_ENDPOINT:-/}
+      MCP_TRANSPORT: streamable-http
+      MCP_STATELESS_HTTP: ${MCP_STATELESS_HTTP:-true}
+      HEALTH_PATH: ${HEALTH_PATH:-/healthz}
+    networks:
+      - web
+    labels:
+      - traefik.enable=true
+
+      - traefik.http.routers.mcp-article-generator.rule=Host(`${MAIN_DOMAIN}`) && PathPrefix(`/mcp-article-generator`)
+      - traefik.http.routers.mcp-article-generator.entrypoints=websecure
+      - traefik.http.routers.mcp-article-generator.tls=true
+
+      - traefik.http.middlewares.mcp-article-generator-strip.stripprefix.prefixes=/mcp-article-generator
+      - traefik.http.routers.mcp-article-generator.middlewares=mcp-article-generator-strip
+
+      - traefik.http.services.mcp-article-generator.loadbalancer.server.port=3000
+
+networks:
+  web:
+    external: true

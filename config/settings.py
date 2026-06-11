@@ -10,6 +10,10 @@ GEMINI_BASE_URL = os.getenv(
     "GEMINI_BASE_URL",
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
 )
+GEMINI_TIMEOUT = int(os.getenv("GEMINI_TIMEOUT", "120"))
+GEMINI_MAX_ATTEMPTS_PER_KEY = int(os.getenv("GEMINI_MAX_ATTEMPTS_PER_KEY", "1"))
+GEMINI_RETRY_DELAY_SECONDS = float(os.getenv("GEMINI_RETRY_DELAY_SECONDS", "2"))
+GEMINI_MAX_RETRY_DELAY_SECONDS = float(os.getenv("GEMINI_MAX_RETRY_DELAY_SECONDS", "15"))
 
 
 def _add_unique_api_key(keys: list[str], api_key: str | None) -> None:

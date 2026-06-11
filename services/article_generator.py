@@ -1,12 +1,19 @@
 from datetime import date
 import json
 import logging
+import time
 
 import requests
-from config.settings import GEMINI_API_KEYS, GEMINI_BASE_URL
+from config.settings import (
+    GEMINI_API_KEYS,
+    GEMINI_BASE_URL,
+    GEMINI_MAX_ATTEMPTS_PER_KEY,
+    GEMINI_MAX_RETRY_DELAY_SECONDS,
+    GEMINI_RETRY_DELAY_SECONDS,
+    GEMINI_TIMEOUT,
+)
 
 logger = logging.getLogger("article_generator.article_generator")
-GEMINI_TIMEOUT = 120
 RETRYABLE_GEMINI_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
@@ -23,73 +30,125 @@ def _extract_text_from_response(payload: dict) -> str:
     return "".join(text_parts)
 
 
+def _response_error_summary(response: requests.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        text = response.text[:300].replace("\n", " ")
+        return f"status_code={response.status_code} body={text}"
+
+    error = payload.get("error", {}) if isinstance(payload, dict) else {}
+    message = error.get("message") or response.text[:300].replace("\n", " ")
+    status = error.get("status")
+
+    parts = [f"status_code={response.status_code}"]
+    if status:
+        parts.append(f"gemini_status={status}")
+    if message:
+        parts.append(f"message={message}")
+
+    return " ".join(parts)
+
+
+def _retry_delay(attempt: int) -> float:
+    delay = GEMINI_RETRY_DELAY_SECONDS * (2 ** max(0, attempt - 1))
+    return min(delay, GEMINI_MAX_RETRY_DELAY_SECONDS)
+
+
 def _generate_content_with_failover(prompt: str) -> str:
     if not GEMINI_API_KEYS:
         raise RuntimeError("No Gemini API keys configured. Set GEMINI_API_KEY or GEMINI_API_KEY1..4 in .env.")
 
-    last_response = None
+    last_error = "No Gemini request was sent."
     for index, api_key in enumerate(GEMINI_API_KEYS, start=1):
-        logger.info("Calling Gemini REST API: api_key_index=%s", index)
-        response = requests.post(
-            GEMINI_BASE_URL,
-            headers={
-                "Content-Type": "application/json",
-                "x-goog-api-key": api_key,
-            },
-            json={
-                "contents": [
-                    {
-                        "parts": [
-                            {"text": prompt}
-                        ]
-                    }
-                ],
-                "generationConfig": {
-                    "responseMimeType": "application/json",
-                    "temperature": 0.7,
-                    "maxOutputTokens": 8192,
-                    "thinkingConfig": {
-                        "thinkingBudget": 0
+        for attempt in range(1, GEMINI_MAX_ATTEMPTS_PER_KEY + 1):
+            logger.info(
+                "Calling Gemini REST API: api_key_index=%s attempt=%s/%s",
+                index,
+                attempt,
+                GEMINI_MAX_ATTEMPTS_PER_KEY,
+            )
+            try:
+                response = requests.post(
+                    GEMINI_BASE_URL,
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": api_key,
                     },
-                },
-            },
-            timeout=GEMINI_TIMEOUT,
-        )
-
-        if response.status_code in RETRYABLE_GEMINI_STATUS_CODES:
-            last_response = response
-            if index < len(GEMINI_API_KEYS):
+                    json={
+                        "contents": [
+                            {
+                                "parts": [
+                                    {"text": prompt}
+                                ]
+                            }
+                        ],
+                        "generationConfig": {
+                            "responseMimeType": "application/json",
+                            "temperature": 0.7,
+                            "maxOutputTokens": 8192,
+                            "thinkingConfig": {
+                                "thinkingBudget": 0
+                            },
+                        },
+                    },
+                    timeout=GEMINI_TIMEOUT,
+                )
+            except requests.RequestException as exc:
+                last_error = f"request_error={exc}"
                 logger.warning(
-                    "Gemini REST API returned retryable status, trying next key: status_code=%s api_key_index=%s",
-                    response.status_code,
+                    "Gemini REST API request error: api_key_index=%s attempt=%s/%s error=%s",
                     index,
+                    attempt,
+                    GEMINI_MAX_ATTEMPTS_PER_KEY,
+                    exc,
                 )
             else:
-                logger.error(
-                    "All Gemini API keys failed with retryable Gemini status: status_code=%s",
-                    response.status_code,
-                )
-            continue
+                if response.status_code in RETRYABLE_GEMINI_STATUS_CODES:
+                    last_error = _response_error_summary(response)
+                    logger.warning(
+                        "Gemini REST API returned retryable status: api_key_index=%s attempt=%s/%s %s",
+                        index,
+                        attempt,
+                        GEMINI_MAX_ATTEMPTS_PER_KEY,
+                        last_error,
+                    )
+                else:
+                    try:
+                        response.raise_for_status()
+                    except requests.HTTPError as exc:
+                        last_error = _response_error_summary(response)
+                        logger.error(
+                            "Gemini REST API request failed: api_key_index=%s %s",
+                            index,
+                            last_error,
+                        )
+                        raise RuntimeError(f"Gemini REST API request failed: {last_error}") from exc
 
-        try:
-            response.raise_for_status()
-        except requests.HTTPError:
-            logger.exception("Gemini REST API request failed: status_code=%s api_key_index=%s", response.status_code, index)
-            raise
+                    return _extract_text_from_response(response.json())
 
-        return _extract_text_from_response(response.json())
+            if attempt < GEMINI_MAX_ATTEMPTS_PER_KEY:
+                delay = _retry_delay(attempt)
+                logger.info("Retrying Gemini request after %.1f seconds", delay)
+                time.sleep(delay)
 
-    if last_response is not None:
-        last_response.raise_for_status()
+        if index < len(GEMINI_API_KEYS):
+            logger.warning("Trying next Gemini API key after failure: api_key_index=%s", index)
 
-    raise RuntimeError("Gemini generation failed before any request was sent.")
+    logger.error("All Gemini API keys failed: %s", last_error)
+    raise RuntimeError(
+        "All Gemini API keys failed. Last Gemini error: "
+        f"{last_error}. If this is status_code=429, the keys are rate limited or quota exhausted."
+    )
 
-def generate_article(category: str):
-    logger.info("Generating article with Gemini: category=%s", category)
+def generate_article(category: str, topic: str | None = None):
+    logger.info("Generating article with Gemini: category=%s topic=%s", category, topic)
     current_year = date.today().year
+    topic_instruction = f"Topik utama: {topic}" if topic else "Topik utama: tentukan berdasarkan kategori."
     prompt = f'''
 Buat artikel blog teknologi profesional.
 Kategori: {category}
+{topic_instruction}
 Tahun saat ini: {current_year}
 Persyaratan:
 - Bahasa Indonesia
@@ -99,6 +158,7 @@ Persyaratan:
 - Gunakan tag h2 dan h3
 - Jangan gunakan markdown
 - Jangan gunakan tahun lama pada judul atau isi artikel kecuali sedang membahas sejarah
+- Judul, excerpt, dan isi harus fokus pada topik utama
 
 Output HARUS JSON valid:
 {{
