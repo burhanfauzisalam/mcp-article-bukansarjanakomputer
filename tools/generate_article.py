@@ -4,5 +4,5 @@ from services.article_generator import generate_article
 
 def execute():
     latest = get_latest_article()
-    next_category = get_next_category(latest["category"])
+    next_category = get_next_category(latest.get("category"))
     return generate_article(next_category)

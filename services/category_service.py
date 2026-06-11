@@ -1,3 +1,8 @@
+import logging
+
+
+logger = logging.getLogger("article_generator.category_service")
+
 CATEGORIES = [
     "Web Development",
     "SEO",
@@ -9,6 +14,9 @@ CATEGORIES = [
 def get_next_category(last_category: str):
     try:
         idx = CATEGORIES.index(last_category)
-        return CATEGORIES[(idx + 1) % len(CATEGORIES)]
+        next_category = CATEGORIES[(idx + 1) % len(CATEGORIES)]
     except ValueError:
-        return CATEGORIES[0]
+        next_category = CATEGORIES[0]
+
+    logger.info("Next category selected: last=%s next=%s", last_category, next_category)
+    return next_category
