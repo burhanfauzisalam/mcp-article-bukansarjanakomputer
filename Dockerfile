@@ -7,6 +7,7 @@ ENV PYTHONUNBUFFERED=1
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
+RUN python -c "from mcp.server.fastmcp import FastMCP; print('FastMCP import OK')"
 
 COPY config ./config
 COPY models ./models
