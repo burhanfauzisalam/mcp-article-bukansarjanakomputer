@@ -6,6 +6,7 @@ services:
     env_file:
       - .env
     environment:
+      TZ: Asia/Jakarta
       PORT: ${PORT:-3000}
       MCP_HOST: 0.0.0.0
       MCP_ENDPOINT: ${MCP_ENDPOINT:-/}
